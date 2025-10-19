@@ -1,0 +1,287 @@
+{
+  "nbformat": 4,
+  "nbformat_minor": 0,
+  "metadata": {
+    "colab": {
+      "provenance": []
+    },
+    "kernelspec": {
+      "name": "python3",
+      "display_name": "Python 3"
+    },
+    "language_info": {
+      "name": "python"
+    }
+  },
+  "cells": [
+    {
+      "cell_type": "code",
+      "execution_count": 1,
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "APvYzd5LnIuQ",
+        "outputId": "0ee0d103-4b54-49e2-cc5f-dca01cc4df96"
+      },
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stderr",
+          "text": [
+            "/tmp/ipython-input-2530512390.py:28: FutureWarning: A value is trying to be set on a copy of a DataFrame or Series through chained assignment using an inplace method.\n",
+            "The behavior will change in pandas 3.0. This inplace method will never work because the intermediate object on which we are setting values always behaves as a copy.\n",
+            "\n",
+            "For example, when doing 'df[col].method(value, inplace=True)', try using 'df.method({col: value}, inplace=True)' or df[col] = df[col].method(value) instead, to perform the operation inplace on the original object.\n",
+            "\n",
+            "\n",
+            "  df[col].fillna(df[col].median(), inplace=True)\n",
+            "/tmp/ipython-input-2530512390.py:30: FutureWarning: A value is trying to be set on a copy of a DataFrame or Series through chained assignment using an inplace method.\n",
+            "The behavior will change in pandas 3.0. This inplace method will never work because the intermediate object on which we are setting values always behaves as a copy.\n",
+            "\n",
+            "For example, when doing 'df[col].method(value, inplace=True)', try using 'df.method({col: value}, inplace=True)' or df[col] = df[col].method(value) instead, to perform the operation inplace on the original object.\n",
+            "\n",
+            "\n",
+            "  df[col].fillna(df[col].mode()[0], inplace=True)\n"
+          ]
+        },
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Data has been loaded and preprocessed.\n"
+          ]
+        }
+      ],
+      "source": [
+        "import pandas as pd\n",
+        "import numpy as np\n",
+        "from sklearn.model_selection import train_test_split\n",
+        "from sklearn.preprocessing import StandardScaler\n",
+        "\n",
+        "# --- 1. Load Data ---\n",
+        "df = pd.read_csv('/content/Loan_Default.csv')\n",
+        "\n",
+        "# --- 2. Initial Cleaning ---\n",
+        "df.drop(['ID', 'year'], axis=1, inplace=True)\n",
+        "\n",
+        "# Function to clean the 'age' column\n",
+        "def clean_age(age):\n",
+        "    if isinstance(age, str):\n",
+        "        if '-' in age:\n",
+        "            low, high = age.split('-')\n",
+        "            return (int(low) + int(high)) / 2\n",
+        "        elif '>' in age:\n",
+        "            return int(age.strip('>'))\n",
+        "    return age\n",
+        "df['age'] = df['age'].apply(clean_age)\n",
+        "\n",
+        "# --- 3. Handle Missing Values ---\n",
+        "numerical_cols = df.select_dtypes(include=['int64', 'float64']).columns\n",
+        "categorical_cols = df.select_dtypes(include=['object']).columns\n",
+        "\n",
+        "for col in numerical_cols:\n",
+        "    df[col].fillna(df[col].median(), inplace=True)\n",
+        "for col in categorical_cols:\n",
+        "    df[col].fillna(df[col].mode()[0], inplace=True)\n",
+        "\n",
+        "# --- 4. One-Hot Encoding ---\n",
+        "df_processed = pd.get_dummies(df, drop_first=True)\n",
+        "\n",
+        "# --- 5. Split and Scale Data ---\n",
+        "X = df_processed.drop('Status', axis=1)\n",
+        "y = df_processed['Status']\n",
+        "\n",
+        "X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)\n",
+        "\n",
+        "scaler = StandardScaler()\n",
+        "X_train_scaled = scaler.fit_transform(X_train)\n",
+        "X_test_scaled = scaler.transform(X_test)\n",
+        "\n",
+        "print(\"Data has been loaded and preprocessed.\")"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from imblearn.over_sampling import SMOTE\n",
+        "import collections\n",
+        "\n",
+        "# Apply SMOTE to the training data\n",
+        "smote = SMOTE(random_state=42)\n",
+        "X_train_resampled, y_train_resampled = smote.fit_resample(X_train_scaled, y_train)\n",
+        "\n",
+        "# Check the new class distribution\n",
+        "print(\"Original training set shape %s\" % collections.Counter(y_train))\n",
+        "print(\"Resampled training set shape %s\" % collections.Counter(y_train_resampled))"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "Reu6rTfMo_no",
+        "outputId": "efe460b9-fcba-46f3-cc8f-4bc43b4b183b"
+      },
+      "execution_count": 2,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Original training set shape Counter({0: 89625, 1: 29311})\n",
+            "Resampled training set shape Counter({0: 89625, 1: 89625})\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from sklearn.ensemble import RandomForestClassifier\n",
+        "from sklearn.metrics import classification_report, confusion_matrix, accuracy_score\n",
+        "\n",
+        "# 1. Initialize and train the Random Forest model on the resampled data\n",
+        "rf_model = RandomForestClassifier(n_estimators=100, random_state=42)\n",
+        "rf_model.fit(X_train_resampled, y_train_resampled)\n",
+        "\n",
+        "# 2. Make predictions on the original, untouched test set\n",
+        "y_pred_rf = rf_model.predict(X_test_scaled)\n",
+        "\n",
+        "# 3. Evaluate the new model's performance\n",
+        "print(\"--- Random Forest Evaluation (with SMOTE) ---\")\n",
+        "print(\"\\nAccuracy:\", accuracy_score(y_test, y_pred_rf))\n",
+        "print(\"\\nConfusion Matrix:\\n\", confusion_matrix(y_test, y_pred_rf))\n",
+        "print(\"\\nClassification Report:\\n\", classification_report(y_test, y_pred_rf))"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "-IWZWRjBq07n",
+        "outputId": "6f864bdd-cd72-4d73-ce99-ec4c8ffd81d3"
+      },
+      "execution_count": 3,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "--- Random Forest Evaluation (with SMOTE) ---\n",
+            "\n",
+            "Accuracy: 1.0\n",
+            "\n",
+            "Confusion Matrix:\n",
+            " [[22406     0]\n",
+            " [    0  7328]]\n",
+            "\n",
+            "Classification Report:\n",
+            "               precision    recall  f1-score   support\n",
+            "\n",
+            "           0       1.00      1.00      1.00     22406\n",
+            "           1       1.00      1.00      1.00      7328\n",
+            "\n",
+            "    accuracy                           1.00     29734\n",
+            "   macro avg       1.00      1.00      1.00     29734\n",
+            "weighted avg       1.00      1.00      1.00     29734\n",
+            "\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# --- 1. Drop Leaky Features from the Original Processed DataFrame ---\n",
+        "X_sanitized = X.drop(columns=['Interest_rate_spread', 'credit_type_EQUI', 'credit_type_EXP'])\n",
+        "print(\"Dropped leaky features. New shape of X:\", X_sanitized.shape)\n",
+        "\n",
+        "\n",
+        "# --- 2. Re-split and Re-scale the Sanitized Data ---\n",
+        "X_train, X_test, y_train, y_test = train_test_split(X_sanitized, y, test_size=0.2, random_state=42, stratify=y)\n",
+        "\n",
+        "scaler = StandardScaler()\n",
+        "X_train_scaled = scaler.fit_transform(X_train)\n",
+        "X_test_scaled = scaler.transform(X_test)\n",
+        "\n",
+        "\n",
+        "# --- 3. Apply SMOTE to the Sanitized Training Data ---\n",
+        "smote = SMOTE(random_state=42)\n",
+        "X_train_resampled, y_train_resampled = smote.fit_resample(X_train_scaled, y_train)\n",
+        "\n",
+        "\n",
+        "# --- 4. Train and Evaluate the Random Forest Model AGAIN ---\n",
+        "rf_sanitized = RandomForestClassifier(n_estimators=100, random_state=42)\n",
+        "rf_sanitized.fit(X_train_resampled, y_train_resampled)\n",
+        "\n",
+        "y_pred_rf_sanitized = rf_sanitized.predict(X_test_scaled)\n",
+        "\n",
+        "print(\"\\n--- Random Forest Evaluation (After Removing Leaky Features) ---\")\n",
+        "print(classification_report(y_test, y_pred_rf_sanitized))"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "R6uACUfVr9V4",
+        "outputId": "a20cb1cb-1f08-475d-e813-057f3c2ae17e"
+      },
+      "execution_count": 4,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Dropped leaky features. New shape of X: (148670, 45)\n",
+            "\n",
+            "--- Random Forest Evaluation (After Removing Leaky Features) ---\n",
+            "              precision    recall  f1-score   support\n",
+            "\n",
+            "           0       1.00      1.00      1.00     22406\n",
+            "           1       0.99      1.00      0.99      7328\n",
+            "\n",
+            "    accuracy                           1.00     29734\n",
+            "   macro avg       0.99      1.00      1.00     29734\n",
+            "weighted avg       1.00      1.00      1.00     29734\n",
+            "\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## 🏆 Final Conclusion: Data Leakage Identified\n",
+        "\n",
+        "### Project Journey and Outcome\n",
+        "\n",
+        "This notebook aimed to improve upon the baseline model from our initial analysis. The primary goals were to address the severe class imbalance using **SMOTE** and build a more robust **Random Forest** model to overcome the overfitting seen in the simple Decision Tree.\n",
+        "\n",
+        "Despite these advanced techniques, the Random Forest model consistently produced unrealistic, near-perfect accuracy scores. This perfect performance persisted even after the most obviously predictive features (`Interest_rate_spread` and `credit_type`) were removed.\n",
+        "\n",
+        "### Diagnosis: A Flawed Dataset\n",
+        "\n",
+        "This consistent and unrealistic performance strongly indicates that the dataset suffers from a fundamental issue known as **data leakage**. This means that multiple features in the data contain information that would only be available *after* a loan's outcome is already known. The models are not learning to predict the future; they are simply finding \"cheat codes\" hidden within the data.\n",
+        "\n",
+        "### Key Takeaway\n",
+        "\n",
+        "The primary outcome of this project is not a deployable predictive model, but a critical diagnostic finding. The most important learning is that:\n",
+        "\n",
+        "**No amount of sophisticated modeling can fix fundamentally flawed data.**\n",
+        "\n",
+        "The ability to identify data leakage is a crucial, real-world skill in data science, as it prevents the deployment of unreliable and misleading models. Therefore, the dataset, in its current form, is not suitable for a realistic loan default prediction task."
+      ],
+      "metadata": {
+        "id": "-EdOP3v6t0X1"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [],
+      "metadata": {
+        "id": "lwFoejdAt3zZ"
+      },
+      "execution_count": null,
+      "outputs": []
+    }
+  ]
+}
